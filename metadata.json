@@ -1,0 +1,6 @@
+{
+  "name": "Football Broadcast Graphics Generator",
+  "description": "A standalone professional live football scoring control, tournament management, and real-time on-screen broadcast overlay graphics generator.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
