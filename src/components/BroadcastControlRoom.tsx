@@ -4,7 +4,7 @@ import {
   RotateCcw, History, Settings, Users, Clipboard, RefreshCw, Layers, Award,
   Globe, Info, FileText, Monitor, HelpCircle, LayoutGrid, CheckSquare, Clock,
   Lock, Mail, LogOut, Check, Sparkles, Copy, FileSpreadsheet, PlayCircle, Loader2,
-  ArrowRightLeft, AlertTriangle
+  ArrowRightLeft, AlertTriangle, Unlock
 } from "lucide-react";
 import { 
   AppState, MatchInfo, Player, MatchEvent, MatchEventType, Position, 
@@ -18,210 +18,294 @@ import {
 import { LiveGraphicsOverlay } from "./LiveGraphicsOverlay";
 import { 
   initAuth, googleSignIn, fetchUsersFromSheet, createDefaultUserSheet, 
-  updateLastLogin, getAccessToken, logoutGoogle
+  updateLastLogin, getAccessToken, logoutGoogle,
+  generateDbTemplates, exportDbToSheets, importDbFromSheets,
+  fetchUsersFromPublicSheet,
+  getActiveGASUrl, initializeGASDatabase, fetchUsersFromGAS, saveUserToGAS, deleteUserFromGAS
 } from "../lib/sheetsService";
+import { 
+  getBroadcastStorageKey, loadBroadcastState, normalizeBroadcastUser, saveBroadcastState, sanitizeState
+} from "../lib/broadcastStateService";
+
+export const createDefaultState = (): AppState => ({
+  matchInfo: {
+    tournamentName: DEFAULT_TOURNAMENT_NAME,
+    season: DEFAULT_SEASON,
+    matchNumber: 45,
+    venue: "Etihad Stadium, Manchester",
+    date: new Date().toISOString().split("T")[0],
+    time: "19:45",
+    referee: DEFAULT_REFEREES.referee,
+    assistantReferee1: DEFAULT_REFEREES.assistantReferee1,
+    assistantReferee2: DEFAULT_REFEREES.assistantReferee2,
+    fourthOfficial: DEFAULT_REFEREES.fourthOfficial,
+    sponsorName: "Chronos Airways",
+    sponsorLogoUrl: "https://upload.wikimedia.org/wikipedia/commons/e/e4/Globe_icon_2.svg",
+    homeTeam: {
+      id: "home",
+      name: "Manchester Blue",
+      shortName: "MCI",
+      color: "#6cabdd",
+      secondaryColor: "#1c2c5b",
+      logoUrl: "https://upload.wikimedia.org/wikipedia/en/e/eb/Manchester_City_FC_badge.svg",
+      formation: "4-3-3",
+      players: JSON.parse(JSON.stringify(DEFAULT_PLAYERS_HOME))
+    },
+    awayTeam: {
+      id: "away",
+      name: "London Red",
+      shortName: "ARS",
+      color: "#ef0107",
+      secondaryColor: "#063672",
+      logoUrl: "https://upload.wikimedia.org/wikipedia/en/5/53/Arsenal_FC.svg",
+      formation: "4-2-3-1",
+      players: JSON.parse(JSON.stringify(DEFAULT_PLAYERS_AWAY))
+    }
+  },
+  period: "PRE",
+  matchMinute: 0,
+  matchSecond: 0,
+  stoppageMinutes: 0,
+  isClockRunning: false,
+  timeline: [],
+  stats: {
+    possessionHome: 52,
+    xgHome: 0.15,
+    xgAway: 0.12,
+    shotsHome: 2,
+    shotsAway: 1,
+    shotsOnTargetHome: 1,
+    shotsOnTargetAway: 0,
+    cornersHome: 1,
+    cornersAway: 1,
+    foulsHome: 2,
+    foulsAway: 3,
+    offsidesHome: 1,
+    offsidesAway: 0,
+    yellowCardsHome: 0,
+    yellowCardsAway: 1,
+    redCardsHome: 0,
+    redCardsAway: 0,
+    savesHome: 0,
+    savesAway: 1,
+    passAccuracyHome: 88,
+    passAccuracyAway: 84
+  },
+  graphics: {
+    scoreBug: true,
+    matchIntro: false,
+    startingXI: false,
+    startingXIAway: false,
+    formationGraphic: false,
+    teamLineup: false,
+    benchGraphic: false,
+    goalGraphic: false,
+    goalScorerGraphic: false,
+    assistGraphic: false,
+    yellowCardGraphic: false,
+    redCardGraphic: false,
+    substitutionGraphic: false,
+    matchStatistics: false,
+    possessionGraphic: false,
+    shotComparison: false,
+    cornerComparison: false,
+    teamComparison: false,
+    playerStatistics: false,
+    manOfTheMatch: false,
+    halfTimeGraphic: false,
+    fullTimeGraphic: false,
+    leagueTable: false,
+    fixtures: false,
+    upcomingMatch: false,
+    tournamentBracket: false,
+    sponsorGraphic: false,
+    lowerThird: false,
+    breakingNewsTicker: true,
+    varReviewGraphic: false,
+    injuryTimeGraphic: false,
+    resultGraphic: false
+  },
+  activeGraphicSettings: {
+    scoreBug: {},
+    matchIntro: {},
+    startingXI: { targetTeamId: "home" },
+    startingXIAway: { targetTeamId: "away" },
+    formationGraphic: { targetTeamId: "home" },
+    teamLineup: {},
+    benchGraphic: { targetTeamId: "home" },
+    goalGraphic: {},
+    goalScorerGraphic: {},
+    assistGraphic: {},
+    yellowCardGraphic: {},
+    redCardGraphic: {},
+    substitutionGraphic: {},
+    matchStatistics: {},
+    possessionGraphic: {},
+    shotComparison: {},
+    cornerComparison: {},
+    teamComparison: {},
+    playerStatistics: { targetPlayerId: "h10" },
+    manOfTheMatch: { targetPlayerId: "h10" },
+    halfTimeGraphic: {},
+    fullTimeGraphic: {},
+    leagueTable: {},
+    fixtures: {},
+    upcomingMatch: {},
+    tournamentBracket: {},
+    sponsorGraphic: {},
+    lowerThird: {},
+    breakingNewsTicker: {},
+    varReviewGraphic: {},
+    injuryTimeGraphic: {},
+    resultGraphic: {}
+  },
+  tournamentTeams: DEFAULT_TOURNAMENT_TEAMS,
+  fixtures: DEFAULT_FIXTURES,
+  newsTickerText: "LIVE FEED: Premier Champions Cup matches broadcasting in digital high definitions. Match score elements auto synchronized.",
+  tournaments: [
+    {
+      id: "t1",
+      name: DEFAULT_TOURNAMENT_NAME,
+      season: DEFAULT_SEASON,
+      logoUrl: "https://upload.wikimedia.org/wikipedia/commons/e/e4/Globe_icon_2.svg",
+      organizer: "Premier Champions Association",
+      venue: "Etihad Stadium, Manchester",
+      notes: "Main season division championship."
+    }
+  ],
+  activeTournamentId: "t1",
+  venues: [
+    { id: "v1", name: "Etihad Stadium, Manchester" },
+    { id: "v2", name: "Emirates Stadium, London" },
+    { id: "v3", name: "Camp Nou, Barcelona" }
+  ],
+  playerMode: "A",
+  simplifiedGraphicsMode: false,
+  matchResultStatus: null,
+  activeTheme: "slate_gray",
+  themePrimaryBgColor: "",
+  themeSecondaryBgColor: "",
+  themeTextColor: ""
+});
 
 export const BroadcastControlRoom: React.FC = () => {
   const pad = (num: number) => num.toString().padStart(2, "0");
 
+  // Determine initial logged-in user at startup
+  const [currentUser, setCurrentUser] = useState<{ username: string; email: string; role: string } | null>(() => {
+    const cached = sessionStorage.getItem("current_logged_in_user");
+    return cached ? JSON.parse(cached) : null;
+  });
+
+  // Track the username for whom state has currently been loaded to avoid overwrites
+  const lastLoadedUserRef = useRef<string | null>(
+    currentUser ? currentUser.username : null
+  );
+  const remoteSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const applyingRemoteStateRef = useRef(false);
+
   // 1. Unified App State
   const [state, setState] = useState<AppState>(() => {
-    const saved = localStorage.getItem("match_broadcast_state");
+    const defaultState = createDefaultState();
+    const initialUsername = currentUser ? currentUser.username : null;
+    const storageKey = getBroadcastStorageKey(initialUsername);
+    const saved = localStorage.getItem(storageKey);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         if (parsed && typeof parsed === "object" && parsed.matchInfo) {
-          return parsed;
+          return sanitizeState(parsed, defaultState);
         }
       } catch (e) {
         console.error("Failed to restore state", e);
       }
     }
-    return {
-      matchInfo: {
-        tournamentName: DEFAULT_TOURNAMENT_NAME,
-        season: DEFAULT_SEASON,
-        matchNumber: 45,
-        venue: "Etihad Stadium, Manchester",
-        date: new Date().toISOString().split("T")[0],
-        time: "19:45",
-        referee: DEFAULT_REFEREES.referee,
-        assistantReferee1: DEFAULT_REFEREES.assistantReferee1,
-        assistantReferee2: DEFAULT_REFEREES.assistantReferee2,
-        fourthOfficial: DEFAULT_REFEREES.fourthOfficial,
-        sponsorName: "Chronos Airways",
-        sponsorLogoUrl: "https://upload.wikimedia.org/wikipedia/commons/e/e4/Globe_icon_2.svg",
-        homeTeam: {
-          id: "home",
-          name: "Manchester Blue",
-          shortName: "MCI",
-          color: "#6cabdd",
-          secondaryColor: "#1c2c5b",
-          logoUrl: "https://upload.wikimedia.org/wikipedia/en/e/eb/Manchester_City_FC_badge.svg",
-          formation: "4-3-3",
-          players: JSON.parse(JSON.stringify(DEFAULT_PLAYERS_HOME))
-        },
-        awayTeam: {
-          id: "away",
-          name: "London Red",
-          shortName: "ARS",
-          color: "#ef0107",
-          secondaryColor: "#063672",
-          logoUrl: "https://upload.wikimedia.org/wikipedia/en/5/53/Arsenal_FC.svg",
-          formation: "4-2-3-1",
-          players: JSON.parse(JSON.stringify(DEFAULT_PLAYERS_AWAY))
-        }
-      },
-      period: "PRE",
-      matchMinute: 0,
-      matchSecond: 0,
-      stoppageMinutes: 0,
-      isClockRunning: false,
-      timeline: [],
-      stats: {
-        possessionHome: 52,
-        xgHome: 0.15,
-        xgAway: 0.12,
-        shotsHome: 2,
-        shotsAway: 1,
-        shotsOnTargetHome: 1,
-        shotsOnTargetAway: 0,
-        cornersHome: 1,
-        cornersAway: 1,
-        foulsHome: 2,
-        foulsAway: 3,
-        offsidesHome: 1,
-        offsidesAway: 0,
-        yellowCardsHome: 0,
-        yellowCardsAway: 1,
-        redCardsHome: 0,
-        redCardsAway: 0,
-        savesHome: 0,
-        savesAway: 1,
-        passAccuracyHome: 88,
-        passAccuracyAway: 84
-      },
-      graphics: {
-        scoreBug: true,
-        matchIntro: false,
-        startingXI: false,
-        formationGraphic: false,
-        teamLineup: false,
-        benchGraphic: false,
-        goalGraphic: false,
-        goalScorerGraphic: false,
-        assistGraphic: false,
-        yellowCardGraphic: false,
-        redCardGraphic: false,
-        substitutionGraphic: false,
-        matchStatistics: false,
-        possessionGraphic: false,
-        shotComparison: false,
-        cornerComparison: false,
-        teamComparison: false,
-        playerStatistics: false,
-        manOfTheMatch: false,
-        halfTimeGraphic: false,
-        fullTimeGraphic: false,
-        leagueTable: false,
-        fixtures: false,
-        upcomingMatch: false,
-        tournamentBracket: false,
-        sponsorGraphic: false,
-        lowerThird: false,
-        breakingNewsTicker: true,
-        varReviewGraphic: false,
-        injuryTimeGraphic: false,
-        resultGraphic: false
-      },
-      activeGraphicSettings: {
-        scoreBug: {},
-        matchIntro: {},
-        startingXI: { targetTeamId: "home" },
-        formationGraphic: { targetTeamId: "home" },
-        teamLineup: {},
-        benchGraphic: { targetTeamId: "home" },
-        goalGraphic: {},
-        goalScorerGraphic: {},
-        assistGraphic: {},
-        yellowCardGraphic: {},
-        redCardGraphic: {},
-        substitutionGraphic: {},
-        matchStatistics: {},
-        possessionGraphic: {},
-        shotComparison: {},
-        cornerComparison: {},
-        teamComparison: {},
-        playerStatistics: { targetPlayerId: "h10" },
-        manOfTheMatch: { targetPlayerId: "h10" },
-        halfTimeGraphic: {},
-        fullTimeGraphic: {},
-        leagueTable: {},
-        fixtures: {},
-        upcomingMatch: {},
-        tournamentBracket: {},
-        sponsorGraphic: {},
-        lowerThird: {},
-        breakingNewsTicker: {},
-        varReviewGraphic: {},
-        injuryTimeGraphic: {},
-        resultGraphic: {}
-      },
-      tournamentTeams: DEFAULT_TOURNAMENT_TEAMS,
-      fixtures: DEFAULT_FIXTURES,
-      newsTickerText: "LIVE FEED: Premier Champions Cup matches broadcasting in digital high definitions. Match score elements auto synchronized.",
-      tournaments: [
-        {
-          id: "t1",
-          name: DEFAULT_TOURNAMENT_NAME,
-          season: DEFAULT_SEASON,
-          logoUrl: "https://upload.wikimedia.org/wikipedia/commons/e/e4/Globe_icon_2.svg",
-          organizer: "Premier Champions Association",
-          venue: "Etihad Stadium, Manchester",
-          notes: "Main season division championship."
-        }
-      ],
-      activeTournamentId: "t1",
-      venues: [
-        { id: "v1", name: "Etihad Stadium, Manchester" },
-        { id: "v2", name: "Emirates Stadium, London" },
-        { id: "v3", name: "Camp Nou, Barcelona" }
-      ],
-      playerMode: "A",
-      simplifiedGraphicsMode: false,
-      matchResultStatus: null,
-      activeTheme: "slate_gray",
-      themePrimaryBgColor: "",
-      themeSecondaryBgColor: "",
-      themeTextColor: ""
-    };
+    return defaultState;
   });
 
   // Dynamic automatic state synchronization to localStorage
   useEffect(() => {
-    localStorage.setItem("match_broadcast_state", JSON.stringify(state));
-  }, [state]);
+    const currentUsername = currentUser ? currentUser.username : null;
+    if (currentUsername === lastLoadedUserRef.current) {
+      if (currentUsername) {
+        localStorage.setItem(getBroadcastStorageKey(currentUsername), JSON.stringify(state));
+      }
+      localStorage.setItem("match_broadcast_state", JSON.stringify(state));
+
+      if (!applyingRemoteStateRef.current) {
+        if (remoteSaveTimerRef.current) {
+          clearTimeout(remoteSaveTimerRef.current);
+        }
+
+        remoteSaveTimerRef.current = setTimeout(() => {
+          saveBroadcastState(currentUsername, state)
+            .then((record) => {
+              setBroadcastDbStatus(`Database synced ${new Date(record.updatedAt).toLocaleTimeString()}`);
+            })
+            .catch((err) => {
+              console.warn("Broadcast database save failed", err);
+              setBroadcastDbStatus("Local mode: database endpoint unavailable");
+            });
+        }, 350);
+      }
+    }
+  }, [state, currentUser]);
+
+  useEffect(() => {
+    const currentUsername = currentUser ? currentUser.username : null;
+    let cancelled = false;
+
+    loadBroadcastState(currentUsername)
+      .then((record) => {
+        if (cancelled || !record?.state?.matchInfo) {
+          setBroadcastDbStatus("Database ready");
+          return;
+        }
+
+        applyingRemoteStateRef.current = true;
+        lastLoadedUserRef.current = currentUsername;
+        setState(prev => ({
+          ...prev,
+          ...record.state,
+          venues: Array.isArray(record.state.venues) ? record.state.venues : (prev.venues || []),
+          tournaments: Array.isArray(record.state.tournaments) ? record.state.tournaments : (prev.tournaments || []),
+          tournamentTeams: Array.isArray(record.state.tournamentTeams) ? record.state.tournamentTeams : (prev.tournamentTeams || []),
+          timeline: Array.isArray(record.state.timeline) ? record.state.timeline : (prev.timeline || []),
+          graphics: {
+            ...prev.graphics,
+            ...record.state.graphics
+          },
+          activeGraphicSettings: {
+            ...prev.activeGraphicSettings,
+            ...record.state.activeGraphicSettings
+          }
+        }));
+        localStorage.setItem(getBroadcastStorageKey(currentUsername), JSON.stringify(record.state));
+        localStorage.setItem("match_broadcast_state", JSON.stringify(record.state));
+        setBroadcastDbStatus(`Loaded database state ${new Date(record.updatedAt).toLocaleTimeString()}`);
+        setTimeout(() => {
+          applyingRemoteStateRef.current = false;
+        }, 0);
+      })
+      .catch((err) => {
+        console.warn("Broadcast database load failed", err);
+        setBroadcastDbStatus("Local mode: database endpoint unavailable");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser]);
 
   // UI Control States
   const [activeTab, setActiveTab] = useState<"control" | "setup" | "squads" | "tournament" | "output">("control");
-  
-  // ==========================================
-  // USER LOGIN & GOOGLE SHEETS AUTH STATE
-  // ==========================================
-  const [currentUser, setCurrentUser] = useState<{ username: string; email: string } | null>(() => {
-    const cached = sessionStorage.getItem("current_logged_in_user");
-    return cached ? JSON.parse(cached) : null;
-  });
-  const [spreadsheetId, setSpreadsheetId] = useState<string>(() => {
-    return localStorage.getItem("google_sheets_spreadsheet_id") || "";
-  });
-  const [googleAccessToken, setGoogleAccessToken] = useState<string | null>(getAccessToken());
-  const [authGoogleUser, setAuthGoogleUser] = useState<any>(null);
+  const [squadConfigTeam, setSquadConfigTeam] = useState<"home" | "away">("home");
+
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
-  const [customSpreadsheetIdInput, setCustomSpreadsheetIdInput] = useState("");
+  const [broadcastDbStatus, setBroadcastDbStatus] = useState("Database starting...");
 
   // ==========================================
   // ADVANCED TOURNAMENT STAGES & CONFIGS
@@ -517,51 +601,194 @@ export const BroadcastControlRoom: React.FC = () => {
   };
 
   // ==========================================
-  // VIRTUAL USER ACCOUNTS & CREDENTIALS STORAGE
+  // LOCAL USER ACCOUNTS & CREDENTIALS STORAGE
   // ==========================================
   const [userDatabase, setUserDatabase] = useState<any[]>(() => {
-    const cached = localStorage.getItem("simulated_users_cache");
+    const cached = localStorage.getItem("local_user_accounts");
     if (cached) return JSON.parse(cached);
-    return [
-      { username: "operator_1", email: "op1@federation.org", pass: "p@ssword", start: "2026-01-01", exp: "2028-12-31", note: "Primary administrator license", lastLogin: "2026-06-16 10:52" },
-      { username: "stadium_main", email: "main@wembleystadium.com", pass: "wembley2026", start: "2026-05-01", exp: "2026-09-01", note: "Seasonal controller", lastLogin: "2026-06-15 18:22" },
-      { username: "guest_trial", email: "guest@gcpfootball.com", pass: "trial99", start: "2026-01-01", exp: "2026-06-30", note: "Limited tester trial", lastLogin: "2026-06-14 09:30" },
-      { username: "expired_test", email: "old@broadcast.net", pass: "passed", start: "2025-01-01", exp: "2025-12-31", note: "Expired demonstrator account", lastLogin: "2025-11-20 16:11" }
+    const defaults = [
+      { username: "admin", email: "admin@tournament.com", pass: "admin123", role: "admin", start: "2026-01-01", exp: "2036-12-31", note: "Default Admin with full access", lastLogin: "" },
+      { username: "operator", email: "operator@tournament.com", pass: "operator456", role: "operator", start: "2026-01-01", exp: "2036-12-31", note: "Standard Operator with full access", lastLogin: "" },
+      { username: "operator_1", email: "operator1@tournament.com", pass: "p@ssword", role: "operator", start: "2026-01-01", exp: "2028-12-31", note: "Secondary Operator License", lastLogin: "" }
     ];
+    localStorage.setItem("local_user_accounts", JSON.stringify(defaults));
+    return defaults;
   });
 
   const [newUserRegUser, setNewUserRegUser] = useState("");
   const [newUserRegEmail, setNewUserRegEmail] = useState("");
   const [newUserRegPass, setNewUserRegPass] = useState("");
+  const [newUserRegRole, setNewUserRegRole] = useState("operator");
   const [newUserRegStart, setNewUserRegStart] = useState("2026-01-01");
-  const [newUserRegExp, setNewUserRegExp] = useState("2026-12-31");
+  const [newUserRegExp, setNewUserRegExp] = useState("2036-12-31");
   const [newUserRegNotes, setNewUserRegNotes] = useState("");
 
-  const handleRegisterUserOnSimulator = (e: React.FormEvent) => {
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [changePassStatus, setChangePassStatus] = useState("");
+
+  const [gasUrlInput, setGasUrlInput] = useState(() => {
+    return localStorage.getItem("google_apps_script_url") || "";
+  });
+  const [initializingGasDb, setInitializingGasDb] = useState(false);
+
+  const handleSaveGasUrl = () => {
+    if (gasUrlInput.trim()) {
+      localStorage.setItem("google_apps_script_url", gasUrlInput.trim());
+      alert("Google Apps Script Web App URL updated successfully!");
+      window.location.reload();
+    } else {
+      localStorage.removeItem("google_apps_script_url");
+      alert("Cloud database URL cleared. Switched to local offline storage.");
+      window.location.reload();
+    }
+  };
+
+  const handleInitGasDatabase = async () => {
+    if (!gasUrlInput.trim()) return;
+    if (!confirm("This will clear and initialize the Google Sheets database with default headers and accounts. Proceed?")) return;
+    
+    try {
+      setInitializingGasDb(true);
+      await initializeGASDatabase(gasUrlInput.trim());
+      alert("Successfully created and initialized database sheets in your Google Spreadsheet! Default accounts (admin, operator, operator_1) are now ready.");
+      window.location.reload();
+    } catch (err: any) {
+      alert(`Database initialization failed: ${err.message || err}`);
+    } finally {
+      setInitializingGasDb(false);
+    }
+  };
+
+  // Load users from GAS Cloud sheet if URL is configured
+  useEffect(() => {
+    const gasUrl = getActiveGASUrl();
+    if (gasUrl) {
+      fetchUsersFromGAS(gasUrl)
+        .then((usersList) => {
+          localStorage.setItem("local_user_accounts", JSON.stringify(usersList));
+          setUserDatabase(usersList);
+        })
+        .catch((err) => {
+          console.warn("Failed to fetch users from Google Sheets GAS database, using cached local accounts:", err);
+        });
+    }
+  }, [currentUser]);
+
+  const handleRegisterUserLocal = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentUser || currentUser.role !== "admin") {
+      alert("Unauthorized: Only administrators can add or update accounts.");
+      return;
+    }
     if (!newUserRegUser.trim() || !newUserRegPass.trim()) {
       alert("Please provide at least a username and secure password.");
       return;
     }
-    const updated = [
-      ...userDatabase,
-      {
-        username: newUserRegUser.trim().toLowerCase(),
-        email: newUserRegEmail.trim() || "unregistered@federation.com",
-        pass: newUserRegPass.trim(),
-        start: newUserRegStart,
-        exp: newUserRegExp,
-        note: newUserRegNotes.trim() || "Virtual Operator License",
-        lastLogin: "Never Logged"
-      }
-    ];
-    setUserDatabase(updated);
-    localStorage.setItem("simulated_users_cache", JSON.stringify(updated));
+
+    const usernameKey = newUserRegUser.trim().toLowerCase();
+    const cached = localStorage.getItem("local_user_accounts");
+    const accountsList = cached ? JSON.parse(cached) : [];
+
+    const existingIndex = accountsList.findIndex((u: any) => u.username === usernameKey);
+    const updatedUserObj = {
+      username: usernameKey,
+      pass: newUserRegPass.trim(),
+      email: newUserRegEmail.trim() || (existingIndex > -1 ? accountsList[existingIndex].email : `${usernameKey}@tournament.com`),
+      role: newUserRegRole,
+      start: newUserRegStart,
+      exp: newUserRegExp,
+      note: newUserRegNotes.trim() || (existingIndex > -1 ? accountsList[existingIndex].note : "Virtual Operator License"),
+      lastLogin: existingIndex > -1 ? accountsList[existingIndex].lastLogin : "Never Logged"
+    };
+
+    if (existingIndex > -1) {
+      accountsList[existingIndex] = updatedUserObj;
+      alert(`User "${usernameKey}" details updated successfully.`);
+    } else {
+      accountsList.push(updatedUserObj);
+      alert(`User "${usernameKey}" created successfully.`);
+    }
+
+    localStorage.setItem("local_user_accounts", JSON.stringify(accountsList));
+    setUserDatabase(accountsList);
+
+    const gasUrl = getActiveGASUrl();
+    if (gasUrl) {
+      saveUserToGAS(gasUrl, updatedUserObj).catch(err => {
+        console.warn("GAS save user failed", err);
+      });
+    }
+
     setNewUserRegUser("");
     setNewUserRegEmail("");
     setNewUserRegPass("");
     setNewUserRegNotes("");
-    alert(`Success: Registered "${newUserRegUser}" to user database grid layout! Try logging in with it.`);
+    setNewUserRegRole("operator");
+  };
+
+  const handleDeleteUserLocal = (usernameToDelete: string) => {
+    if (!currentUser || currentUser.role !== "admin") {
+      alert("Unauthorized: Only administrators can delete accounts.");
+      return;
+    }
+    if (usernameToDelete === currentUser.username) {
+      alert("You cannot delete your own logged-in admin account!");
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to delete the user "${usernameToDelete}"?`)) {
+      return;
+    }
+
+    const cached = localStorage.getItem("local_user_accounts");
+    if (!cached) return;
+    const accountsList = JSON.parse(cached);
+    const filtered = accountsList.filter((u: any) => u.username !== usernameToDelete);
+    
+    localStorage.setItem("local_user_accounts", JSON.stringify(filtered));
+    setUserDatabase(filtered);
+    alert(`User "${usernameToDelete}" has been deleted.`);
+
+    const gasUrl = getActiveGASUrl();
+    if (gasUrl) {
+      deleteUserFromGAS(gasUrl, usernameToDelete).catch(err => {
+        console.warn("GAS delete user failed", err);
+      });
+    }
+  };
+
+  const handleChangeOwnPassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!oldPassword.trim() || !newPassword.trim()) {
+      setChangePassStatus("Please enter both current and new password.");
+      return;
+    }
+    
+    const cached = localStorage.getItem("local_user_accounts");
+    if (!cached || !currentUser) return;
+    const accountsList = JSON.parse(cached);
+    const matched = accountsList.find((u: any) => u.username === currentUser.username);
+    
+    if (matched) {
+      if (matched.pass === oldPassword.trim()) {
+        matched.pass = newPassword.trim();
+        localStorage.setItem("local_user_accounts", JSON.stringify(accountsList));
+        setUserDatabase(accountsList);
+        setOldPassword("");
+        setNewPassword("");
+        setChangePassStatus("Password successfully changed!");
+        setTimeout(() => setChangePassStatus(""), 4000);
+
+        const gasUrl = getActiveGASUrl();
+        if (gasUrl) {
+          saveUserToGAS(gasUrl, matched).catch(err => {
+            console.warn("GAS update password failed", err);
+          });
+        }
+      } else {
+        setChangePassStatus("Incorrect current password.");
+      }
+    }
   };
 
   // Multi-Match State Switching Handler
@@ -654,6 +881,7 @@ export const BroadcastControlRoom: React.FC = () => {
           scoreBug: prev.graphics.scoreBug,
           matchIntro: false,
           startingXI: false,
+          startingXIAway: false,
           formationGraphic: false,
           teamLineup: false,
           benchGraphic: false,
@@ -713,7 +941,12 @@ export const BroadcastControlRoom: React.FC = () => {
   const [copiedObsLink, setCopiedObsLink] = useState(false);
 
   const handleCopyObsLink = () => {
-    const url = window.location.origin + window.location.pathname + "?overlay=true";
+    const overlayUser = normalizeBroadcastUser(currentUser?.username);
+    const gasUrl = getActiveGASUrl();
+    let url = `${window.location.origin}${window.location.pathname}?overlay=true&user=${encodeURIComponent(overlayUser)}`;
+    if (gasUrl) {
+      url += `&scriptUrl=${encodeURIComponent(gasUrl)}`;
+    }
     navigator.clipboard.writeText(url).then(() => {
       setCopiedObsLink(true);
       setTimeout(() => setCopiedObsLink(false), 2000);
@@ -755,75 +988,50 @@ export const BroadcastControlRoom: React.FC = () => {
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // ==========================================
-  // GOOGLE SHEETS & CREDENTIALS LOGIN FLOW
+  // LOCAL USER LOGIN & CREDENTIALS FLOW
   // ==========================================
-  useEffect(() => {
-    const unsub = initAuth(
-      (user, token) => {
-        setGoogleAccessToken(token);
-        setAuthGoogleUser(user);
-      },
-      () => {
-        setGoogleAccessToken(null);
-        setAuthGoogleUser(null);
+  const loginUserAndLoadState = (loggedUser: { username: string; email: string; role: string }) => {
+    // Partitioned State loading
+    lastLoadedUserRef.current = loggedUser.username;
+    const storageKey = getBroadcastStorageKey(loggedUser.username);
+    const saved = localStorage.getItem(storageKey);
+    let nextState = createDefaultState();
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === "object" && parsed.matchInfo) {
+          nextState = {
+            ...nextState,
+            ...parsed,
+            venues: Array.isArray(parsed.venues) ? parsed.venues : nextState.venues,
+            tournaments: Array.isArray(parsed.tournaments) ? parsed.tournaments : nextState.tournaments,
+            tournamentTeams: Array.isArray(parsed.tournamentTeams) ? parsed.tournamentTeams : nextState.tournamentTeams,
+            timeline: Array.isArray(parsed.timeline) ? parsed.timeline : nextState.timeline,
+            graphics: {
+              ...nextState.graphics,
+              ...parsed.graphics
+            },
+            activeGraphicSettings: {
+              ...nextState.activeGraphicSettings,
+              ...parsed.activeGraphicSettings
+            }
+          };
+        }
+      } catch (e) {
+        console.error("Failed to restore state", e);
       }
-    );
-    return () => unsub();
-  }, []);
+    }
 
-  const handleGoogleLogin = async () => {
-    try {
-      setLoginError("");
-      const res = await googleSignIn();
-      if (res) {
-        setGoogleAccessToken(res.accessToken);
-        setAuthGoogleUser(res.user);
-      }
-    } catch (e: any) {
-      setLoginError("Google Sign-In failed: " + (e.message || e));
-    }
-  };
-
-  const handleCreateNewSheet = async () => {
-    if (!googleAccessToken) {
-      setLoginError("Please sign in with Google first to authorize Sheet Creation.");
-      return;
-    }
-    try {
-      setLoginLoading(true);
-      setLoginError("");
-      const newId = await createDefaultUserSheet(googleAccessToken);
-      setSpreadsheetId(newId);
-      localStorage.setItem("google_sheets_spreadsheet_id", newId);
-    } catch (e: any) {
-      setLoginError("Spreadsheet creation failed: " + (e.message || e));
-    } finally {
-      setLoginLoading(false);
-    }
-  };
-
-  const handleConnectSheetManually = () => {
-    if (!customSpreadsheetIdInput.trim()) {
-      setLoginError("Please enter a valid Google Spreadsheet ID.");
-      return;
-    }
-    const cleanId = customSpreadsheetIdInput.trim();
-    setSpreadsheetId(cleanId);
-    localStorage.setItem("google_sheets_spreadsheet_id", cleanId);
-    setCustomSpreadsheetIdInput("");
+    setState(nextState);
+    setCurrentUser(loggedUser);
+    sessionStorage.setItem("current_logged_in_user", JSON.stringify(loggedUser));
+    setLoginUsername("");
+    setLoginPassword("");
     setLoginError("");
   };
 
   const handleCredentialsLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!spreadsheetId) {
-      setLoginError("Please connect or generate a User Spreadsheet database first.");
-      return;
-    }
-    if (!googleAccessToken) {
-      setLoginError("Session expired. Please sign in with Google to authorize credentials verification.");
-      return;
-    }
     if (!loginUsername.trim() || !loginPassword.trim()) {
       setLoginError("Please enter both Username and Password.");
       return;
@@ -833,71 +1041,59 @@ export const BroadcastControlRoom: React.FC = () => {
       setLoginLoading(true);
       setLoginError("");
 
-      const usersMap = await fetchUsersFromSheet(spreadsheetId, googleAccessToken);
+      const cached = localStorage.getItem("local_user_accounts");
+      const accountsList = cached ? JSON.parse(cached) : [
+        { username: "admin", email: "admin@tournament.com", pass: "admin123", role: "admin", start: "2026-01-01", exp: "2036-12-31", note: "Default Admin with full access", lastLogin: "" },
+        { username: "operator", email: "operator@tournament.com", pass: "operator456", role: "operator", start: "2026-01-01", exp: "2036-12-31", note: "Standard Operator with full access", lastLogin: "" },
+        { username: "operator_1", email: "operator1@tournament.com", pass: "p@ssword", role: "operator", start: "2026-01-01", exp: "2028-12-31", note: "Secondary Operator License", lastLogin: "" }
+      ];
+
       const userKey = loginUsername.trim().toLowerCase();
-      const matched = usersMap[userKey];
+      const matched = accountsList.find((u: any) => u.username === userKey);
 
-      if (!matched) {
-        setLoginError("Username not found in spreadsheet database.");
-        return;
-      }
+      if (matched) {
+        if (matched.pass === loginPassword.trim()) {
+          // Check expiration date
+          if (matched.exp) {
+            const expDate = new Date(matched.exp);
+            const now = new Date();
+            if (expDate < now) {
+              setLoginError("Your account license has expired. Contact system administrator.");
+              return;
+            }
+          }
 
-      const [sheetUser, sheetPass, sheetEmail, sheetStartStr, sheetExpStr, sheetNotes] = matched.row;
+          // Update last login timestamp in local database
+          const nowStr = new Date().toLocaleString("en-US") + " Local";
+          matched.lastLogin = nowStr;
+          localStorage.setItem("local_user_accounts", JSON.stringify(accountsList));
+          setUserDatabase(accountsList);
 
-      if (sheetPass !== loginPassword.trim()) {
-        setLoginError("Incorrect password. Please try again.");
-        return;
-      }
-
-      // Expiration validation
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      // Parse dates safely
-      const startDate = sheetStartStr ? new Date(sheetStartStr) : null;
-      const expDate = sheetExpStr ? new Date(sheetExpStr) : null;
-
-      if (startDate) {
-        startDate.setHours(0,0,0,0);
-        if (today < startDate) {
-          setLoginError(`Account not yet active! Starts on: ${sheetStartStr}.`);
-          return;
+          const loggedUser = { 
+            username: matched.username, 
+            email: matched.email || `${matched.username}@tournament.com`,
+            role: matched.role || "operator"
+          };
+          loginUserAndLoadState(loggedUser);
+        } else {
+          setLoginError("Invalid Username or Password.");
         }
+      } else {
+        setLoginError("Invalid Username or Password.");
       }
-
-      if (expDate) {
-        expDate.setHours(23, 59, 59, 999);
-        if (today > expDate) {
-          setLoginError(`Account Expired! Access ended on: ${sheetExpStr}.`);
-          return;
-        }
-      }
-
-      // Log successful login session details in sheet
-      try {
-        await updateLastLogin(spreadsheetId, googleAccessToken, matched.rowIndex);
-      } catch (logErr) {
-        console.warn("Failed to update last login in Google Sheet:", logErr);
-      }
-
-      const loggedUser = { username: String(sheetUser), email: String(sheetEmail) };
-      setCurrentUser(loggedUser);
-      sessionStorage.setItem("current_logged_in_user", JSON.stringify(loggedUser));
-      setLoginUsername("");
-      setLoginPassword("");
-
     } catch (err: any) {
-      console.error(err);
-      setLoginError("Failed to fetch/verify credentials from Google Sheet: " + (err.message || err));
+      console.error("Login failure:", err);
+      setLoginError("An unexpected error occurred during login.");
     } finally {
       setLoginLoading(false);
     }
   };
 
   const handleSystemLogout = async () => {
+    lastLoadedUserRef.current = null;
+    setState(createDefaultState());
     setCurrentUser(null);
     sessionStorage.removeItem("current_logged_in_user");
-    await logoutGoogle();
   };
 
   // Keyboard Shortcuts Listener
@@ -1591,6 +1787,41 @@ Enjoy your production graphics! - System Team`);
     }));
   };
 
+  const handleUpdateStarter = (teamId: "home" | "away", slotIndex: number, newPlayerId: string) => {
+    setState(prev => {
+      const matchInfo = { ...prev.matchInfo };
+      const team = teamId === "home" ? { ...matchInfo.homeTeam } : { ...matchInfo.awayTeam };
+      
+      const currentStarters = team.players.filter(p => p.isStarting);
+      const newStarters = [...currentStarters];
+      
+      const existingIndex = newStarters.findIndex(p => p.id === newPlayerId);
+      const oldPlayer = newStarters[slotIndex];
+      
+      const targetPlayer = team.players.find(p => p.id === newPlayerId);
+      if (targetPlayer) {
+        if (existingIndex > -1 && oldPlayer) {
+          newStarters[existingIndex] = oldPlayer;
+        }
+        newStarters[slotIndex] = targetPlayer;
+      }
+      
+      const starterIds = newStarters.map(p => p.id);
+      team.players = team.players.map(p => ({
+        ...p,
+        isStarting: starterIds.includes(p.id)
+      }));
+      
+      if (teamId === "home") {
+        matchInfo.homeTeam = team;
+      } else {
+        matchInfo.awayTeam = team;
+      }
+      
+      return { ...prev, matchInfo };
+    });
+  };
+
   // Sponsor/News/L3 inputs updates
   const applySettings = (type: "ticker" | "l3" | "var") => {
     setState(prev => {
@@ -1807,113 +2038,15 @@ Enjoy your production graphics! - System Team`);
               </div>
             )}
 
-            {/* Google Sheets Connection Section */}
-            <div className="bg-[#1b1e2c]/50 border border-neutral-800 rounded-xl p-4 space-y-3.5">
-              <span className="text-[10px] text-amber-500 font-black tracking-wider uppercase flex items-center gap-1.5 leading-none">
-                <FileSpreadsheet className="w-3.5 h-3.5" /> 1. Connect Google Sheets Database
-              </span>
-
-              {!googleAccessToken ? (
-                <button
-                  type="button"
-                  id="btn-login-google"
-                  onClick={handleGoogleLogin}
-                  className="w-full bg-[#1c2135] text-white hover:bg-neutral-850 border border-neutral-700 py-2 px-3 rounded-lg text-xs font-black tracking-wide uppercase transition flex items-center justify-center gap-2"
-                >
-                  <Globe className="w-4 h-4 text-amber-500" /> Start Google Authorization
-                </button>
-              ) : (
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center bg-black/40 p-2.5 rounded border border-neutral-850">
-                    <div className="flex items-center gap-1.5 text-xs">
-                      <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                      <span className="font-bold text-neutral-300">Authorized:</span>
-                      <span className="text-neutral-450 truncate max-w-[150px] font-mono text-[10.5px]">
-                        {authGoogleUser?.email || "Google Connected"}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      id="btn-logout-google"
-                      onClick={handleSystemLogout}
-                      className="text-[9.5px] font-bold text-red-400 hover:underline uppercase"
-                    >
-                      Disconnect
-                    </button>
-                  </div>
-
-                  {!spreadsheetId ? (
-                    <div className="space-y-2.5 pt-1">
-                      <button
-                        type="button"
-                        id="btn-sheet-generate"
-                        disabled={loginLoading}
-                        onClick={handleCreateNewSheet}
-                        className="w-full bg-amber-500 hover:bg-amber-600 text-neutral-950 py-2 px-3 rounded-lg text-xs font-black tracking-wide uppercase transition flex items-center justify-center gap-1.5"
-                      >
-                        {loginLoading ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Plus className="w-4 h-4" />
-                        )}
-                        Create New User Database Sheet
-                      </button>
-
-                      <div className="flex items-center text-[10px] text-neutral-500 font-bold justify-center gap-2">
-                        <span className="h-[1px] bg-neutral-850 w-full" />
-                        OR
-                        <span className="h-[1px] bg-neutral-850 w-full" />
-                      </div>
-
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={customSpreadsheetIdInput}
-                          onChange={(e) => setCustomSpreadsheetIdInput(e.target.value)}
-                          placeholder="Paste Existing Spreadsheet ID"
-                          className="flex-1 bg-black/50 border border-neutral-800 rounded-lg p-2 text-xs text-white placeholder-neutral-600 font-mono"
-                        />
-                        <button
-                          type="button"
-                          id="btn-sheet-connect-manual"
-                          onClick={handleConnectSheetManually}
-                          className="bg-neutral-800 hover:bg-neutral-750 text-amber-500 border border-neutral-700 px-3 py-2 rounded-lg text-xs font-black uppercase transition"
-                        >
-                          Connect
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-1.5 bg-black/40 p-2.5 rounded border border-neutral-850">
-                      <span className="text-[10px] text-neutral-450 uppercase font-bold text-neutral-300 font-bold">Linked Spreadsheet ID:</span>
-                      <span className="text-[10px] text-amber-400 font-mono select-all truncate break-all">
-                        {spreadsheetId}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSpreadsheetId("");
-                          localStorage.removeItem("google_sheets_spreadsheet_id");
-                        }}
-                        className="text-[9px] text-red-500 hover:underline hover:text-red-300 font-bold uppercase self-end mt-1"
-                      >
-                        Change linked sheet
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
             {/* Application Credentials verification form */}
-            <div className="bg-[#10131e] border border-neutral-800 rounded-xl p-4 space-y-3.5">
+            <div className="bg-[#10131e] border border-neutral-800 rounded-xl p-4 space-y-3.5 z-10">
               <span className="text-[10px] text-amber-500 font-black tracking-wider uppercase flex items-center gap-1.5 leading-none">
-                <Lock className="w-3.5 h-3.5" /> 2. Sign In to Workspace Account
+                <Lock className="w-3.5 h-3.5" /> Sign In to Workspace Account
               </span>
 
               <div className="space-y-3.5">
                 <div>
-                  <label className="text-[10px] uppercase font-bold text-neutral-450 text-neutral-400 block mb-1">Username</label>
+                  <label className="text-[10px] uppercase font-bold text-neutral-455 text-neutral-400 block mb-1">Username</label>
                   <div className="relative">
                     <input
                       type="text"
@@ -1962,7 +2095,7 @@ Enjoy your production graphics! - System Team`);
 
           {/* Quick Info text */}
           <div className="bg-black/30 border border-neutral-850 p-3 rounded-lg text-[10.5px] text-neutral-400 leading-normal z-10 select-none uppercase font-bold text-center">
-            Accounts and active expiration states are monitored directly inside your personal Google Sheets user list.
+            Accounts and active expiration states are monitored directly inside the local software database.
           </div>
         </div>
       </div>
@@ -2117,7 +2250,11 @@ Enjoy your production graphics! - System Team`);
         <div className="flex items-center gap-3 font-mono text-[11px] text-neutral-400 flex-wrap">
           <span className="flex items-center gap-1 bg-neutral-900/40 px-2.5 py-1 rounded border border-neutral-800">
             <Globe className="w-3.5 h-3.5 text-amber-500" />
-            LOCAL: <span className="text-white font-black">http://localhost:3000?overlay=true</span>
+            LOCAL: <span className="text-white font-black">http://localhost:3000?overlay=true&user={normalizeBroadcastUser(currentUser?.username)}</span>
+          </span>
+          <span className="flex items-center gap-1 bg-neutral-900/40 px-2.5 py-1 rounded border border-neutral-800">
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+            DB: <span className="text-white font-black">{broadcastDbStatus}</span>
           </span>
           <span className="flex items-center gap-1 bg-neutral-900/40 px-2.5 py-1 rounded border border-neutral-800">
             <Monitor className="w-3.5 h-3.5 text-amber-500" />
@@ -3352,7 +3489,7 @@ Enjoy your production graphics! - System Team`);
                           >
                             Rename
                           </button>
-                          {state.venues.length > 1 && (
+                          {(state.venues || []).length > 1 && (
                             <button
                               type="button"
                               onClick={() => handleDeleteVenue(v.id)}
@@ -3693,7 +3830,7 @@ Enjoy your production graphics! - System Team`);
                           >
                             Edit
                           </button>
-                          {state.tournamentTeams.length > 2 && (
+                          {(state.tournamentTeams || []).length > 2 && (
                             <button
                               type="button"
                               onClick={() => {
@@ -4184,7 +4321,7 @@ Enjoy your production graphics! - System Team`);
                                 </button>
                               </div>
 
-                              {state.tournaments.length > 1 && (
+                              {(state.tournaments || []).length > 1 && (
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -4827,80 +4964,301 @@ Enjoy your production graphics! - System Team`);
                 {tournamentTab === "accounts" && (
                   <div className="space-y-5 text-xs">
                     <div className="p-4 rounded-xl bg-neutral-900/60 border border-neutral-850 select-none">
-                      <h4 className="text-xs font-black text-amber-500 uppercase tracking-widest">Active Accounts database verification records</h4>
-                      <p className="text-[10px] text-neutral-400 mt-1 uppercase">Monitor license durations, registered emails, and register login test accounts.</p>
+                      <h4 className="text-xs font-black text-amber-500 uppercase tracking-widest flex items-center gap-1.5">
+                        <Users className="w-4 h-4" /> Local User Access Management
+                      </h4>
+                      <p className="text-[10px] text-neutral-400 mt-1 uppercase">
+                        {currentUser?.role === "admin" 
+                          ? "Administrator Control: Create, edit, and remove user accounts and roles."
+                          : "User Account Control: Manage your local user session credentials."
+                        }
+                      </p>
                     </div>
 
+                    {/* Google Sheets Cloud Database Sync Settings (Admin Only) */}
+                    {currentUser?.role === "admin" && (
+                      <div className="bg-[#111422] p-4 rounded-xl border border-neutral-800 space-y-4">
+                        <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest block border-b border-neutral-850 pb-1.5 flex items-center gap-2">
+                          <FileSpreadsheet className="w-3.5 h-3.5" /> Google Sheets Cloud Database Sync Settings
+                        </span>
+                        <p className="text-[10.5px] text-neutral-400 leading-normal font-medium leading-relaxed">
+                          Connect this studio app to a Google Sheets database to sync your users, tournament setups, and matches in real-time. This allows OBS Studio overlays running in different browser profiles or other devices to stay perfectly in sync.
+                        </p>
+                        <div className="space-y-2">
+                          <label className="text-[9px] text-[#999] uppercase font-bold block mb-1">Google Apps Script Web App URL</label>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={gasUrlInput}
+                              onChange={(e) => setGasUrlInput(e.target.value)}
+                              placeholder="e.g. https://script.google.com/macros/s/XXXX/exec"
+                              className="flex-1 bg-neutral-950 border border-neutral-800 rounded p-2 text-xs text-white"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleSaveGasUrl}
+                              className="bg-amber-500 hover:bg-amber-600 font-extrabold text-neutral-950 px-4 py-2 rounded uppercase text-[10.5px] transition"
+                            >
+                              Save URL
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between bg-black/40 p-3 rounded-lg border border-neutral-850 text-[10.5px]">
+                          <div>
+                            <span className="text-[9px] uppercase font-bold text-neutral-500 block">Database Status:</span>
+                            <span className={gasUrlInput ? "text-emerald-400 font-bold" : "text-amber-500 font-bold"}>
+                              {gasUrlInput ? "Connected to Cloud Database" : "Using Local Offline Storage Only"}
+                            </span>
+                          </div>
+                          {gasUrlInput && (
+                            <button
+                              type="button"
+                              onClick={handleInitGasDatabase}
+                              disabled={initializingGasDb}
+                              className="bg-emerald-600 hover:bg-emerald-500 font-bold text-white px-3.5 py-1.5 rounded uppercase text-[9.5px] transition flex items-center gap-1.5"
+                            >
+                              {initializingGasDb ? (
+                                <>
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                  Initializing...
+                                </>
+                              ) : (
+                                "Initialize Sheets Structure"
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-12 gap-5">
-                      
-                      {/* Administrator User Registration Form */}
-                      <form onSubmit={handleRegisterUserOnSimulator} className="col-span-12 md:col-span-4 bg-[#111422] p-4 rounded-xl border border-neutral-800 space-y-3">
-                        <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest block border-b border-neutral-850 pb-1.5">Add Account Credentials</span>
-                        
+                      {/* ADMIN-ONLY SECTION: USER CREATION & MANAGEMENT LIST */}
+                      {currentUser?.role === "admin" ? (
+                        <>
+                          {/* Create/Edit Form */}
+                          <form onSubmit={handleRegisterUserLocal} className="col-span-12 md:col-span-4 bg-[#111422] p-4 rounded-xl border border-neutral-800 space-y-3">
+                            <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest block border-b border-neutral-850 pb-1.5 flex items-center gap-2">
+                              <Plus className="w-3.5 h-3.5" /> Add / Edit Account
+                            </span>
+                            
+                            <div>
+                              <label className="text-[9px] text-[#999] uppercase font-bold block mb-1">Username *</label>
+                              <input
+                                type="text"
+                                required
+                                value={newUserRegUser}
+                                onChange={(e) => setNewUserRegUser(e.target.value)}
+                                placeholder="e.g. operator_stadium"
+                                className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="text-[9px] text-[#999] uppercase font-bold block mb-1 font-semibold">Role *</label>
+                              <select
+                                value={newUserRegRole}
+                                onChange={(e) => setNewUserRegRole(e.target.value)}
+                                className="w-full bg-neutral-950 border border-neutral-850 rounded p-2 text-white font-bold"
+                              >
+                                <option value="operator">Operator (Standard)</option>
+                                <option value="admin">Admin (Full Control)</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="text-[9px] text-[#999] uppercase font-bold block mb-1">Password *</label>
+                              <input
+                                type="text"
+                                required
+                                value={newUserRegPass}
+                                onChange={(e) => setNewUserRegPass(e.target.value)}
+                                placeholder="e.g. secret123"
+                                className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white font-mono"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="text-[9px] text-[#999] uppercase font-bold block mb-1">Email</label>
+                              <input
+                                type="email"
+                                value={newUserRegEmail}
+                                onChange={(e) => setNewUserRegEmail(e.target.value)}
+                                placeholder="e.g. user@stadium.co"
+                                className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white"
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="text-[9px] text-[#999] uppercase font-bold block mb-1 font-semibold">Start Date</label>
+                                <input
+                                  type="date"
+                                  value={newUserRegStart}
+                                  onChange={(e) => setNewUserRegStart(e.target.value)}
+                                  className="w-full bg-neutral-950 border border-neutral-800 rounded p-1.5 text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[9px] text-[#999] uppercase font-bold block mb-1 font-semibold">Exp End Date</label>
+                                <input
+                                  type="date"
+                                  value={newUserRegExp}
+                                  onChange={(e) => setNewUserRegExp(e.target.value)}
+                                  className="w-full bg-neutral-950 border border-neutral-800 rounded p-1.5 text-white"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="text-[9px] text-[#999] uppercase font-bold block mb-1 font-semibold">Notes</label>
+                              <input
+                                type="text"
+                                value={newUserRegNotes}
+                                onChange={(e) => setNewUserRegNotes(e.target.value)}
+                                placeholder="e.g. Arena manager"
+                                className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white"
+                              />
+                            </div>
+
+                            <button
+                              type="submit"
+                              className="w-full bg-amber-500 hover:bg-amber-600 font-extrabold text-neutral-950 p-2 rounded uppercase text-[10.5px] transition"
+                            >
+                              Add / Update Account
+                            </button>
+                          </form>
+
+                          {/* Accounts List Grid */}
+                          <div className="col-span-12 md:col-span-8 overflow-x-auto bg-[#10131e] border border-neutral-800 rounded-xl p-4 space-y-3">
+                            <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest block border-b border-neutral-850 pb-1.5">
+                              Registered Accounts List
+                            </span>
+                            <table className="w-full text-left border-collapse text-[10.5px]">
+                              <thead>
+                                <tr className="border-b border-neutral-850 text-[10px] text-neutral-450 uppercase select-none font-black font-sans bg-neutral-900/40">
+                                  <th className="p-2">User details</th>
+                                  <th className="p-2">Role</th>
+                                  <th className="p-2">Password</th>
+                                  <th className="p-2">Validity</th>
+                                  <th className="p-2 text-center">Status</th>
+                                  <th className="p-2 text-center">Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {userDatabase.map((acct, idx) => {
+                                  const expDateObject = acct.exp ? new Date(acct.exp) : null;
+                                  const isExpired = expDateObject ? (new Date() > expDateObject) : false;
+                                  return (
+                                    <tr key={acct.username + idx} className="border-b border-neutral-850 hover:bg-neutral-900/10 font-mono">
+                                      <td className="p-2 flex flex-col">
+                                        <span className="font-sans font-black text-amber-500 text-xs uppercase">{acct.username}</span>
+                                        <span className="text-[9.5px] text-neutral-450 select-none">{acct.email || "No email"}</span>
+                                        <span className="text-[9px] text-[#666] italic select-none">Last login: {acct.lastLogin || "Never"}</span>
+                                      </td>
+                                      <td className="p-2 font-sans">
+                                        <span className={`text-[8.5px] px-1.5 py-0.5 rounded font-black uppercase ${
+                                          acct.role === "admin" 
+                                            ? "bg-amber-500/10 text-amber-500 border border-amber-500/20" 
+                                            : "bg-blue-500/10 text-blue-400 border border-blue-500/20"
+                                        }`}>
+                                          {acct.role || "operator"}
+                                        </span>
+                                      </td>
+                                      <td className="p-2 text-neutral-300 font-semibold select-all">
+                                        {acct.pass}
+                                      </td>
+                                      <td className="p-2 font-mono text-[9.5px] text-neutral-450 flex flex-col">
+                                        <span>From: {acct.start || "Unset"}</span>
+                                        <span>End: {acct.exp || "Infinity"}</span>
+                                      </td>
+                                      <td className="p-2 text-center">
+                                        {isExpired ? (
+                                          <span className="bg-red-500/15 text-red-500 font-black border border-red-500/35 uppercase text-[8px] px-1.5 py-0.5 rounded animate-pulse">EXPIRED</span>
+                                        ) : (
+                                          <span className="bg-emerald-500/15 text-emerald-400 font-black border border-emerald-500/35 uppercase text-[8px] px-1.5 py-0.5 rounded">ACTIVE</span>
+                                        )}
+                                      </td>
+                                      <td className="p-2 text-center">
+                                        <div className="flex items-center justify-center gap-1.5">
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setNewUserRegUser(acct.username);
+                                              setNewUserRegPass(acct.pass);
+                                              setNewUserRegEmail(acct.email || "");
+                                              setNewUserRegRole(acct.role || "operator");
+                                              setNewUserRegStart(acct.start || "2026-01-01");
+                                              setNewUserRegExp(acct.exp || "2036-12-31");
+                                              setNewUserRegNotes(acct.note || "");
+                                            }}
+                                            className="p-1 hover:bg-amber-500/15 text-neutral-400 hover:text-amber-500 rounded transition"
+                                            title="Edit user details"
+                                          >
+                                            <Edit3 className="w-3.5 h-3.5" />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleDeleteUserLocal(acct.username)}
+                                            className="p-1 hover:bg-red-500/15 text-neutral-400 hover:text-red-500 rounded transition"
+                                            title="Delete account"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
+                      ) : null}
+
+                      {/* PASSWORD CHANGE SECTION (Visible to everyone) */}
+                      <form 
+                        onSubmit={handleChangeOwnPassword} 
+                        className={`bg-[#111422] p-4 rounded-xl border border-neutral-850 space-y-3 ${
+                          currentUser?.role === "admin" 
+                            ? "col-span-12 md:col-span-4" 
+                            : "col-span-12 md:col-span-6 md:col-start-4"
+                        }`}
+                      >
+                        <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest block border-b border-neutral-850 pb-1.5 flex items-center gap-2">
+                          <Lock className="w-3.5 h-3.5" /> Change Your Password
+                        </span>
+
+                        {changePassStatus && (
+                          <div className={`p-2 rounded text-[10px] font-bold uppercase ${
+                            changePassStatus.includes("success") 
+                              ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
+                              : "bg-red-500/10 text-red-500 border border-red-500/20"
+                          }`}>
+                            {changePassStatus}
+                          </div>
+                        )}
+
                         <div>
-                          <label className="text-[9px] text-[#999] uppercase font-bold block mb-1">Username *</label>
+                          <label className="text-[9px] text-[#999] uppercase font-bold block mb-1">Current Password *</label>
                           <input
-                            type="text"
+                            type="password"
                             required
-                            value={newUserRegUser}
-                            onChange={(e) => setNewUserRegUser(e.target.value)}
-                            placeholder="e.g. wembley_stadium"
+                            value={oldPassword}
+                            onChange={(e) => setOldPassword(e.target.value)}
+                            placeholder="••••••••"
                             className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white"
                           />
                         </div>
 
                         <div>
-                          <label className="text-[9px] text-[#999] uppercase font-bold block mb-1">Active Email</label>
+                          <label className="text-[9px] text-[#999] uppercase font-bold block mb-1">New Password *</label>
                           <input
-                            type="email"
-                            value={newUserRegEmail}
-                            onChange={(e) => setNewUserRegEmail(e.target.value)}
-                            placeholder="e.g. tech@stadium.co"
-                            className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="text-[9px] text-[#999] uppercase font-bold block mb-1">Secure Password *</label>
-                          <input
-                            type="text"
+                            type="password"
                             required
-                            value={newUserRegPass}
-                            onChange={(e) => setNewUserRegPass(e.target.value)}
-                            placeholder="e.g. limit99"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            placeholder="••••••••"
                             className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white font-mono"
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="text-[9px] text-[#999] uppercase font-bold block mb-1 font-semibold">Start Date</label>
-                            <input
-                              type="date"
-                              value={newUserRegStart}
-                              onChange={(e) => setNewUserRegStart(e.target.value)}
-                              className="w-full bg-neutral-950 border border-neutral-800 rounded p-1.5 text-white"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[9px] text-[#999] uppercase font-bold block mb-1 font-semibold">Exp End Date</label>
-                            <input
-                              type="date"
-                              value={newUserRegExp}
-                              onChange={(e) => setNewUserRegExp(e.target.value)}
-                              className="w-full bg-neutral-950 border border-neutral-800 rounded p-1.5 text-white"
-                            />
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="text-[9px] text-[#999] uppercase font-bold block mb-1 font-semibold">Licensor Notes</label>
-                          <input
-                            type="text"
-                            value={newUserRegNotes}
-                            onChange={(e) => setNewUserRegNotes(e.target.value)}
-                            placeholder="e.g. Main arena host"
-                            className="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-white"
                           />
                         </div>
 
@@ -4908,55 +5266,24 @@ Enjoy your production graphics! - System Team`);
                           type="submit"
                           className="w-full bg-amber-500 hover:bg-amber-600 font-extrabold text-neutral-950 p-2 rounded uppercase text-[10.5px] transition"
                         >
-                          Register to Database
+                          Update Password
                         </button>
                       </form>
 
-                      {/* Active Accounts Grid display */}
-                      <div className="col-span-12 md:col-span-8 overflow-x-auto">
-                        <table className="w-full text-left border-collapse text-[10.5px]">
-                          <thead>
-                            <tr className="border-b border-neutral-800 text-[10px] text-neutral-400 uppercase select-none font-black font-sans bg-neutral-900/40">
-                              <th className="p-2">User details</th>
-                              <th className="p-2">Client Email</th>
-                              <th className="p-2">Active Password</th>
-                              <th className="p-2">Validity bounds</th>
-                              <th className="p-2 text-center">Expiry Status</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {userDatabase.map((acct, idx) => {
-                              const expDateObject = acct.exp ? new Date(acct.exp) : null;
-                              const isExpired = expDateObject ? (new Date() > expDateObject) : false;
-                              return (
-                                <tr key={acct.username + idx} className="border-b border-neutral-850 hover:bg-neutral-900/10 font-mono">
-                                  <td className="p-2 flex flex-col">
-                                    <span className="font-sans font-black text-amber-500 text-xs uppercase">{acct.username}</span>
-                                    <span className="text-[9.5px] text-[#888]">{acct.note || "No memo flags"}</span>
-                                  </td>
-                                  <td className="p-2 font-sans truncate max-w-[120px] text-neutral-300">
-                                    {acct.email}
-                                  </td>
-                                  <td className="p-2 text-neutral-400 font-bold">
-                                    {acct.pass}
-                                  </td>
-                                  <td className="p-2 font-mono text-[9.5px] text-neutral-400 flex flex-col">
-                                    <span>From: {acct.start || "Unset"}</span>
-                                    <span>End: {acct.exp || "Infinity"}</span>
-                                  </td>
-                                  <td className="p-2 text-center">
-                                    {isExpired ? (
-                                      <span className="bg-red-500/15 text-red-500 font-black border border-red-500/35 uppercase text-[8.5px] px-2 py-0.5 rounded animate-pulse">EXPIRED</span>
-                                    ) : (
-                                      <span className="bg-emerald-500/15 text-emerald-400 font-black border border-emerald-500/35 uppercase text-[8.5px] px-2  py-0.5 rounded">ACTIVE</span>
-                                    )}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
+                      {/* Operator database message */}
+                      {currentUser?.role !== "admin" && (
+                        <div className="col-span-12 md:col-span-6 md:col-start-4 bg-neutral-900/50 border border-neutral-850 p-4 rounded-xl space-y-2 select-none">
+                          <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest block border-b border-neutral-850 pb-1.5 flex items-center gap-2">
+                            <Info className="w-3.5 h-3.5" /> Database Scope
+                          </span>
+                          <p className="text-xs text-neutral-300 leading-relaxed font-sans">
+                            You are logged in as <strong className="text-white uppercase font-black font-mono">{currentUser?.username}</strong> with standard operator privileges.
+                          </p>
+                          <p className="text-[10.5px] text-neutral-450 leading-relaxed">
+                            Your workspace data (Match Setup configurations, Tournament matches, squads, live overlay states) is completely isolated under your own local database partition. To configure or add users, contact your system administrator.
+                          </p>
+                        </div>
+                      )}
 
                     </div>
                   </div>
@@ -5047,6 +5374,81 @@ Enjoy your production graphics! - System Team`);
                     </select>
                   </div>
 
+                  {/* Squad & Lineup Config section */}
+                  <div className="border-t border-neutral-850 pt-3 mt-3 space-y-3">
+                    <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest block">Squad & Lineup Config</span>
+                    
+                    <div>
+                      <label className="text-[9px] font-bold block mb-1 uppercase text-neutral-400">Configure Players of Team</label>
+                      <select
+                        id="select-config-squad-team"
+                        value={squadConfigTeam}
+                        onChange={(e) => setSquadConfigTeam(e.target.value as "home" | "away")}
+                        className="w-full bg-black/60 border border-neutral-800 rounded p-1.5 text-xs text-white"
+                      >
+                        <option value="home">Home Team ({state.matchInfo.homeTeam.name})</option>
+                        <option value="away">Away Team ({state.matchInfo.awayTeam.name})</option>
+                      </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[9px] font-bold block mb-1 uppercase text-neutral-400">Formation Graphic Team</label>
+                        <select
+                          id="select-formation-team"
+                          value={state.activeGraphicSettings.formationGraphic?.targetTeamId || "home"}
+                          onChange={(e) => updateGraphicSettings("formationGraphic", { targetTeamId: e.target.value })}
+                          className="w-full bg-black/60 border border-neutral-800 rounded p-1.5 text-[11px] text-white"
+                        >
+                          <option value="home">Home</option>
+                          <option value="away">Away</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-bold block mb-1 uppercase text-neutral-400">Bench Graphic Team</label>
+                        <select
+                          id="select-bench-team"
+                          value={state.activeGraphicSettings.benchGraphic?.targetTeamId || "home"}
+                          onChange={(e) => updateGraphicSettings("benchGraphic", { targetTeamId: e.target.value })}
+                          className="w-full bg-black/60 border border-neutral-800 rounded p-1.5 text-[11px] text-white"
+                        >
+                          <option value="home">Home</option>
+                          <option value="away">Away</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-bold block uppercase text-neutral-400">Select Starting XI Players</label>
+                      <div className="max-h-[220px] overflow-y-auto border border-neutral-800/85 rounded bg-black/40 p-2 space-y-1.5">
+                        {(() => {
+                          const activeTeam = squadConfigTeam === "home" ? state.matchInfo.homeTeam : state.matchInfo.awayTeam;
+                          const starters = activeTeam.players.filter(p => p.isStarting);
+                          return Array.from({ length: 11 }).map((_, idx) => {
+                            const player = starters[idx];
+                            return (
+                              <div key={idx} className="flex items-center gap-2 text-[11px]">
+                                <span className="w-5 text-neutral-500 font-mono text-[10px]">#{idx + 1}</span>
+                                <select
+                                  id={`select-starter-${squadConfigTeam}-${idx}`}
+                                  value={player?.id || ""}
+                                  onChange={(e) => handleUpdateStarter(squadConfigTeam, idx, e.target.value)}
+                                  className="flex-1 bg-neutral-900 border border-neutral-800 rounded px-1 py-0.5 text-xs text-white"
+                                >
+                                  {activeTeam.players.map(p => (
+                                    <option key={p.id} value={p.id}>
+                                      #{p.number} - {p.name} ({p.position}) {p.isStarting ? "[Starting]" : "[Bench]"}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            );
+                          });
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Lower third customize */}
                   <div className="border-t border-neutral-850 pt-2 space-y-2">
                     <span className="text-[9px] font-bold text-neutral-450 uppercase text-neutral-400">Custom Title L3 (Graphic 27)</span>
@@ -5120,35 +5522,36 @@ Enjoy your production graphics! - System Team`);
                     const labels: Record<keyof ActiveGraphics, string> = {
                       scoreBug: "1. Score Bug Banner",
                       matchIntro: "2. Full Grand Match Intro",
-                      startingXI: "3. Starting XI Lineup",
-                      formationGraphic: "4. Tactical Pitch Formation",
-                      teamLineup: "5. Active Lineups Comparison",
-                      benchGraphic: "6. Squad Substitutes Bench",
-                      goalGraphic: "7. Celebrations Goal Popup",
-                      goalScorerGraphic: "8. Goal Scorer Lower-Third",
-                      assistGraphic: "9. Goal Assist Information",
-                      yellowCardGraphic: "10. Yellow Card Incident Card",
-                      redCardGraphic: "11. Red Card Booking Card",
-                      substitutionGraphic: "12. In / Out Substitutions",
-                      matchStatistics: "13. Full Match Statistics",
-                      possessionGraphic: "14. Mini Possession HUD Banner",
-                      shotComparison: "15. Team Shots Target gauges",
-                      cornerComparison: "16. Won Corners comparison",
-                      teamComparison: "17. General Team Strength HUD",
-                      playerStatistics: "18. Player Personal Metrics",
-                      manOfTheMatch: "19. Special Man Of The Match",
-                      halfTimeGraphic: "20. HT Scoreboard Score block",
-                      fullTimeGraphic: "21. FT Scoreboard and history",
-                      leagueTable: "22. Tournament Standings",
-                      fixtures: "23. Rounds schedule checklist",
-                      upcomingMatch: "24. Pre-game Upcoming promo",
-                      tournamentBracket: "25. Knockout Playoff Brackets",
-                      sponsorGraphic: "26. Bottom Sponsors Banner",
-                      lowerThird: "27. Minimal Nameplate Third",
-                      breakingNewsTicker: "28. News Crawler Bottom",
-                      varReviewGraphic: "29. VAR Flashing check plate",
-                      injuryTimeGraphic: "30. Stoppage Injury HUD banner",
-                      resultGraphic: "31. Official Final Result Graphic"
+                      startingXI: "3. Starting XI Lineup (Home)",
+                      startingXIAway: "4. Starting XI Lineup (Away)",
+                      formationGraphic: "5. Tactical Pitch Formation",
+                      teamLineup: "6. Active Lineups Comparison",
+                      benchGraphic: "7. Squad Substitutes Bench",
+                      goalGraphic: "8. Celebrations Goal Popup",
+                      goalScorerGraphic: "9. Goal Scorer Lower-Third",
+                      assistGraphic: "10. Goal Assist Information",
+                      yellowCardGraphic: "11. Yellow Card Incident Card",
+                      redCardGraphic: "12. Red Card Booking Card",
+                      substitutionGraphic: "13. In / Out Substitutions",
+                      matchStatistics: "14. Full Match Statistics",
+                      possessionGraphic: "15. Mini Possession HUD Banner",
+                      shotComparison: "16. Team Shots Target gauges",
+                      cornerComparison: "17. Won Corners comparison",
+                      teamComparison: "18. General Team Strength HUD",
+                      playerStatistics: "19. Player Personal Metrics",
+                      manOfTheMatch: "20. Special Man Of The Match",
+                      halfTimeGraphic: "21. HT Scoreboard Score block",
+                      fullTimeGraphic: "22. FT Scoreboard and history",
+                      leagueTable: "23. Tournament Standings",
+                      fixtures: "24. Rounds schedule checklist",
+                      upcomingMatch: "25. Pre-game Upcoming promo",
+                      tournamentBracket: "26. Knockout Playoff Brackets",
+                      sponsorGraphic: "27. Bottom Sponsors Banner",
+                      lowerThird: "28. Minimal Nameplate Third",
+                      breakingNewsTicker: "29. News Crawler Bottom",
+                      varReviewGraphic: "30. VAR Flashing check plate",
+                      injuryTimeGraphic: "31. Stoppage Injury HUD banner",
+                      resultGraphic: "32. Official Final Result Graphic"
                     };
 
                     return (
@@ -5156,12 +5559,11 @@ Enjoy your production graphics! - System Team`);
                         key={gKey}
                         id={`btn-graphic-${gKey}`}
                         onClick={() => {
-                          // For team-based graphics, let's preset the target Team ID home/away randomly or toggled
-                          if (typedKey === "startingXI" || typedKey === "formationGraphic" || typedKey === "benchGraphic") {
-                            // Toggle team from home/away if clicked again or keep home
-                            const currTeam = state.activeGraphicSettings[typedKey]?.targetTeamId || "home";
-                            const nextTeam = currTeam === "home" ? "away" : "home";
-                            updateGraphicSettings(typedKey, { targetTeamId: nextTeam });
+                          // For team-based starting lineup templates, force home/away selection
+                          if (typedKey === "startingXI") {
+                            updateGraphicSettings("startingXI", { targetTeamId: "home" });
+                          } else if (typedKey === "startingXIAway") {
+                            updateGraphicSettings("startingXIAway", { targetTeamId: "away" });
                           }
                           toggleGraphic(typedKey);
                         }}

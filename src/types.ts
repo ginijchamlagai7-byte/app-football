@@ -172,6 +172,7 @@ export interface ActiveGraphics {
   scoreBug: boolean;
   matchIntro: boolean;
   startingXI: boolean;
+  startingXIAway: boolean;
   formationGraphic: boolean;
   teamLineup: boolean;
   benchGraphic: boolean;

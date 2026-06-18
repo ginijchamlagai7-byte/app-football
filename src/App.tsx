@@ -3,32 +3,50 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { BroadcastControlRoom } from "./components/BroadcastControlRoom";
+import { BroadcastControlRoom, createDefaultState } from "./components/BroadcastControlRoom";
 import { LiveGraphicsOverlay } from "./components/LiveGraphicsOverlay";
 import React, { useState, useEffect } from "react";
 import { AppState } from "./types";
+import { getBroadcastStorageKey, loadBroadcastState, normalizeBroadcastUser, sanitizeState } from "./lib/broadcastStateService";
 
 export default function App() {
-  const [isOverlayOnly, setIsOverlayOnly] = useState(false);
+  const [isOverlayOnly] = useState(() => {
+    const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+    return params.get("overlay") === "true";
+  });
   const [syncedState, setSyncedState] = useState<AppState | null>(null);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("overlay") === "true") {
-      setIsOverlayOnly(true);
+    if (isOverlayOnly) {
+      const params = new URLSearchParams(window.location.search);
+      const overlayUser = normalizeBroadcastUser(params.get("user"));
       
       // Force base documents to default transparent for OBS Studio browser source
       document.body.style.backgroundColor = "transparent";
       document.documentElement.style.backgroundColor = "transparent";
       
-      // Load initially from localStorage
-      const loadState = () => {
-        const saved = localStorage.getItem("match_broadcast_state");
+      // Load from the shared Vite database first, then fall back to browser storage.
+      const loadState = async () => {
+        try {
+          const remoteRecord = await loadBroadcastState(overlayUser);
+          if (remoteRecord?.state) {
+            const sanitized = sanitizeState(remoteRecord.state, createDefaultState());
+            setSyncedState(sanitized);
+            localStorage.setItem(getBroadcastStorageKey(overlayUser), JSON.stringify(sanitized));
+            localStorage.setItem("match_broadcast_state", JSON.stringify(sanitized));
+            return;
+          }
+        } catch (err) {
+          console.warn("Broadcast database unavailable, using local overlay cache", err);
+        }
+
+        const saved = localStorage.getItem(getBroadcastStorageKey(overlayUser)) || localStorage.getItem("match_broadcast_state");
         if (saved) {
           try {
             const parsed = JSON.parse(saved);
             if (parsed && typeof parsed === "object") {
-              setSyncedState(parsed);
+              const sanitized = sanitizeState(parsed, createDefaultState());
+              setSyncedState(sanitized);
             }
           } catch (e) {
             console.error("Error parsing sync state", e);
@@ -40,11 +58,12 @@ export default function App() {
 
       // Listen to cross-window storage change events
       const handleStorage = (e: StorageEvent) => {
-        if (e.key === "match_broadcast_state" && e.newValue) {
+        if ((e.key === "match_broadcast_state" || e.key === getBroadcastStorageKey(overlayUser)) && e.newValue) {
           try {
             const parsed = JSON.parse(e.newValue);
             if (parsed && typeof parsed === "object") {
-              setSyncedState(parsed);
+              const sanitized = sanitizeState(parsed, createDefaultState());
+              setSyncedState(sanitized);
             }
           } catch (err) {
             console.error("Error syncing storage event state", err);
@@ -55,14 +74,14 @@ export default function App() {
       window.addEventListener("storage", handleStorage);
 
       // Safe continuous polling backup for isolated CEF browser instances inside OBS Studio
-      const interval = setInterval(loadState, 500);
+      const interval = setInterval(loadState, 750);
 
       return () => {
         window.removeEventListener("storage", handleStorage);
         clearInterval(interval);
       };
     }
-  }, []);
+  }, [isOverlayOnly]);
 
   if (isOverlayOnly) {
     if (!syncedState) {

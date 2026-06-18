@@ -60,6 +60,7 @@ export const LiveGraphicsOverlay: React.FC<LiveGraphicsOverlayProps> = ({
         scoreBug: !!rawGraphics.scoreBug,
         matchIntro: !!rawGraphics.matchIntro,
         startingXI: false,
+        startingXIAway: false,
         formationGraphic: false,
         teamLineup: false,
         benchGraphic: false,
@@ -528,6 +529,75 @@ export const LiveGraphicsOverlay: React.FC<LiveGraphicsOverlayProps> = ({
               {/* Manager footer */}
               <div className="mt-5 pt-3 border-t border-neutral-850 flex justify-between text-xs text-neutral-400 font-bold">
                 <span>MANAGER: {activeGraphicSettings.startingXI?.targetTeamId === "away" ? "A. Arteta" : "P. Guardiola"}</span>
+                <span className="text-amber-500 uppercase">XI STARTERS</span>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ========================================================= */}
+        {/* 3.5 STARTING XI LINEUP (AWAY TEAM)                       */}
+        {/* ========================================================= */}
+        <AnimatePresence>
+          {graphics.startingXIAway && (
+            <motion.div
+              id="graphic-startingxi-away"
+              initial={{ x: 600, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: 600, opacity: 0 }}
+              transition={{ type: "spring", damping: 25 }}
+              className="absolute top-20 right-16 w-[480px] bg-[#111420]/95 border-r-8 border-b-8 shadow-2xl p-8 rounded-xl z-20 text-white"
+              style={{ borderColor: activeGraphicSettings.startingXIAway?.targetTeamId === "home" ? homeTeam.color : awayTeam.color }}
+            >
+              {/* Heading */}
+              <div className="border-b border-neutral-800 pb-4 mb-4">
+                <span className="text-xs font-black text-amber-500 uppercase tracking-widest">TEAM LINEUP</span>
+                <div className="flex items-center gap-3 mt-1">
+                  {((activeGraphicSettings.startingXIAway?.targetTeamId === "home" ? homeTeam.logoUrl : awayTeam.logoUrl)) ? (
+                    <img src={activeGraphicSettings.startingXIAway?.targetTeamId === "home" ? homeTeam.logoUrl : awayTeam.logoUrl} className="w-8 h-8 object-contain" alt="" referrerPolicy="no-referrer" />
+                  ) : (
+                    <Trophy className="w-8 h-8" style={{ color: activeGraphicSettings.startingXIAway?.targetTeamId === "home" ? homeTeam.color : awayTeam.color }} />
+                  )}
+                  <h2 className="text-2xl font-black uppercase italic tracking-tighter text-white">
+                    {activeGraphicSettings.startingXIAway?.targetTeamId === "home" ? homeTeam.name : awayTeam.name}
+                  </h2>
+                </div>
+                <div className="text-xs font-bold text-neutral-400 mt-1">
+                  Formation: {activeGraphicSettings.startingXIAway?.targetTeamId === "home" ? homeTeam.formation : awayTeam.formation}
+                </div>
+              </div>
+
+              {/* Player list */}
+              <div className="space-y-1.5 max-h-[640px] overflow-y-auto pr-1">
+                {(activeGraphicSettings.startingXIAway?.targetTeamId === "home" ? homeTeam : awayTeam).players
+                  .filter(p => p.isStarting)
+                  .map((player, index) => (
+                    <div 
+                      key={player.id} 
+                      className="flex items-center justify-between bg-black/40 hover:bg-black/60 transition px-3.5 py-2.5 rounded border-l-2 border-neutral-800"
+                      style={{ 
+                        borderLeftColor: index === 0 ? "#eab308" : (activeGraphicSettings.startingXIAway?.targetTeamId === "home" ? homeTeam.color : awayTeam.color) 
+                      }}
+                    >
+                      <div className="flex items-center gap-3.5">
+                        <span className="w-6 font-mono font-black text-amber-500 text-sm text-center bg-black/60 py-0.5 rounded border border-neutral-800">
+                          {player.number}
+                        </span>
+                        <span className="font-bold text-sm text-neutral-100">{player.name}</span>
+                        {player.isCaptain && (
+                          <span className="bg-amber-500 text-neutral-900 text-[10px] font-black px-1.5 py-0.5 rounded tracking-wider uppercase scale-90">CAPTAIN</span>
+                        )}
+                      </div>
+                      <span className="text-[10px] font-black tracking-widest text-neutral-400 uppercase bg-neutral-900 border border-neutral-800 px-2 py-0.5 rounded">
+                        {player.position}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+
+              {/* Manager footer */}
+              <div className="mt-5 pt-3 border-t border-neutral-850 flex justify-between text-xs text-neutral-400 font-bold">
+                <span>MANAGER: {activeGraphicSettings.startingXIAway?.targetTeamId === "home" ? "P. Guardiola" : "A. Arteta"}</span>
                 <span className="text-amber-500 uppercase">XI STARTERS</span>
               </div>
             </motion.div>
